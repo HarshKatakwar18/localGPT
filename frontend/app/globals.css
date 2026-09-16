@@ -1,0 +1,195 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+
+  --background: #212121;
+  --sidebar: #171717;
+  --surface: #2f2f2f;
+  --surface-hover: #3a3a3a;
+  --border: #444444;
+  --text-primary: #ececec;
+  --text-secondary: #a0a0a0;
+  --accent: #10a37f;
+  --accent-hover: #0d8f70;
+}
+
+:root[data-theme="midnight"] {
+  color-scheme: dark;
+
+  --background: #212121;
+  --sidebar: #171717;
+  --surface: #2f2f2f;
+  --surface-hover: #3a3a3a;
+  --border: #444444;
+  --text-primary: #ececec;
+  --text-secondary: #a0a0a0;
+  --accent: #10a37f;
+  --accent-hover: #0d8f70;
+}
+
+:root[data-theme="ocean"] {
+  color-scheme: dark;
+
+  --background: #102a43;
+  --sidebar: #071c2f;
+  --surface: #173f5f;
+  --surface-hover: #215477;
+  --border: #35617e;
+  --text-primary: #e8f4ff;
+  --text-secondary: #a9c5da;
+  --accent: #38bdf8;
+  --accent-hover: #0ea5e9;
+}
+
+:root[data-theme="forest"] {
+  color-scheme: dark;
+
+  --background: #17251f;
+  --sidebar: #0d1712;
+  --surface: #24382d;
+  --surface-hover: #304b3b;
+  --border: #46634f;
+  --text-primary: #e7f5eb;
+  --text-secondary: #a8c3af;
+  --accent: #4ade80;
+  --accent-hover: #22c55e;
+}
+
+:root[data-theme="royal"] {
+  color-scheme: dark;
+
+  --background: #211b36;
+  --sidebar: #151126;
+  --surface: #30274d;
+  --surface-hover: #40345f;
+  --border: #554873;
+  --text-primary: #f1edff;
+  --text-secondary: #bdb3d8;
+  --accent: #a78bfa;
+  --accent-hover: #8b5cf6;
+}
+
+:root[data-theme="sunset"] {
+  color-scheme: dark;
+
+  --background: #302019;
+  --sidebar: #1e1410;
+  --surface: #493027;
+  --surface-hover: #604136;
+  --border: #765447;
+  --text-primary: #fff0e8;
+  --text-secondary: #d6b7a8;
+  --accent: #fb923c;
+  --accent-hover: #f97316;
+}
+
+:root[data-theme="rose"] {
+  color-scheme: dark;
+
+  --background: #301d28;
+  --sidebar: #21121a;
+  --surface: #492b3b;
+  --surface-hover: #613b4e;
+  --border: #795267;
+  --text-primary: #fff0f6;
+  --text-secondary: #d8b5c5;
+  --accent: #f472b6;
+  --accent-hover: #ec4899;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --background: #f7f7f8;
+  --sidebar: #ffffff;
+  --surface: #ffffff;
+  --surface-hover: #eeeeef;
+  --border: #dddddf;
+  --text-primary: #202123;
+  --text-secondary: #6b6b70;
+  --accent: #10a37f;
+  --accent-hover: #0d8f70;
+}
+
+:root[data-theme="slate"] {
+  color-scheme: dark;
+
+  --background: #20242b;
+  --sidebar: #15181e;
+  --surface: #2b3038;
+  --surface-hover: #383f49;
+  --border: #48515d;
+  --text-primary: #edf1f5;
+  --text-secondary: #aab3bf;
+  --accent: #60a5fa;
+  --accent-hover: #3b82f6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--background);
+  color: var(--text-primary);
+  font-family: Arial, Helvetica, sans-serif;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: var(--border) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+.scroll-area {
+  scroll-behavior: smooth;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+textarea:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
