@@ -80,7 +80,17 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  const [theme, setTheme] = useState<ThemeId>("midnight");
+  const [theme, setTheme] = useState<ThemeId>(() => {
+  if (typeof window === "undefined") {
+    return "midnight";
+  }
+
+  const savedTheme = localStorage.getItem("localgpt-theme");
+
+  return (savedTheme as ThemeId | null) ?? "midnight";
+});
+
+
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -93,33 +103,15 @@ export default function Home() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    void initializeApp();
-  }, []);
+  let cancelled = false;
 
-  useEffect(() => {
-  const savedTheme = localStorage.getItem(
-    "localgpt-theme",
-  ) as ThemeId | null;
-
-  if (savedTheme) {
-    setTheme(savedTheme);
-  }
-}, []);
-
-useEffect(() => {
-  document.documentElement.dataset.theme = theme;
-  localStorage.setItem("localgpt-theme", theme);
-}, [theme]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-    });
-  }, [messages]);
-
-  async function initializeApp() {
+  async function loadApplication() {
     try {
       const backendThreads = await getThreads();
+
+      if (cancelled) {
+        return;
+      }
 
       const convertedThreads: ChatThread[] = backendThreads.map((thread) => ({
         id: thread.thread_id,
@@ -134,13 +126,48 @@ useEffect(() => {
         savedThreadId &&
         convertedThreads.some((thread) => thread.id === savedThreadId)
       ) {
+        const loadedMessages = await getThread(savedThreadId);
+
+        if (cancelled) {
+          return;
+        }
+
+        const convertedMessages: ChatMessage[] = loadedMessages.map(
+          (message, index) => ({
+            id: `${savedThreadId}-${index}`,
+            role: message.role,
+            content: message.content,
+          }),
+        );
+
         setActiveThreadId(savedThreadId);
-        await loadThread(savedThreadId);
+        setMessages(convertedMessages);
       }
     } catch (error) {
       console.error("Failed to initialize LocalGPT:", error);
     }
   }
+
+  void loadApplication();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
+
+
+
+useEffect(() => {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem("localgpt-theme", theme);
+}, [theme]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
+  }, [messages]);
+
 
   async function refreshThreads() {
     try {

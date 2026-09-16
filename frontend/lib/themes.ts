@@ -43,7 +43,7 @@ export const THEMES: ThemeDefinition[] = [
   {
     id: "sunset",
     name: "Sunset",
-    description: "Warm orange and brown tones",
+    description: "Warm orange and brown colors",
     preview: "#302019",
   },
   {

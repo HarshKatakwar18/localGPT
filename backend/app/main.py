@@ -296,41 +296,56 @@ async def delete_thread(thread_id: str):
 
     async with await AsyncConnection.connect(
         database_url,
-        autocommit=True,
+        autocommit=False,
     ) as connection:
-        await connection.execute(
-            """
-            DELETE FROM checkpoint_writes
-            WHERE thread_id = %s;
-            """,
-            (thread_id,),
-        )
+        try:
+            # Delete checkpoint writes first because they may depend
+            # on checkpoint records.
+            await connection.execute(
+                """
+                DELETE FROM checkpoint_writes
+                WHERE thread_id = %s;
+                """,
+                (thread_id,),
+            )
 
-        await connection.execute(
-            """
-            DELETE FROM checkpoints
-            WHERE thread_id = %s;
-            """,
-            (thread_id,),
-        )
+            # Delete checkpoint records for this thread.
+            await connection.execute(
+                """
+                DELETE FROM checkpoints
+                WHERE thread_id = %s;
+                """,
+                (thread_id,),
+            )
 
-        await connection.execute(
-            """
-            DELETE FROM checkpoint_blobs
-            WHERE thread_id = %s;
-            """,
-            (thread_id,),
-        )
+            # Delete stored checkpoint blobs for this thread.
+            await connection.execute(
+                """
+                DELETE FROM checkpoint_blobs
+                WHERE thread_id = %s;
+                """,
+                (thread_id,),
+            )
 
-        await connection.execute(
-            """
-            DELETE FROM conversations
-            WHERE thread_id = %s;
-            """,
-            (thread_id,),
-        )
+            # Delete the frontend conversation metadata.
+            result = await connection.execute(
+                """
+                DELETE FROM conversations
+                WHERE thread_id = %s;
+                """,
+                (thread_id,),
+            )
+
+            await connection.commit()
+
+        except Exception:
+            await connection.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to permanently delete the conversation",
+            )
 
     return {
-        "message": "Conversation deleted successfully",
+        "message": "Conversation and checkpoint data deleted permanently",
         "thread_id": thread_id,
     }

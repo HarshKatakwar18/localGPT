@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import type { ThemeId } from "@/lib/themes";
+import { THEMES, type ThemeId } from "@/lib/themes";
 
 type SettingsModalProps = {
   open: boolean;
@@ -9,62 +9,6 @@ type SettingsModalProps = {
   onThemeChange: (theme: ThemeId) => void;
   onClose: () => void;
 };
-
-const themeOptions: Array<{
-  id: ThemeId;
-  name: string;
-  description: string;
-  preview: string;
-}> = [
-  {
-    id: "midnight" as ThemeId,
-    name: "Midnight",
-    description: "The classic dark LocalGPT experience",
-    preview: "#202020",
-  },
-  {
-    id: "ocean" as ThemeId,
-    name: "Ocean",
-    description: "Cool blue tones with a calm interface",
-    preview: "#12304d",
-  },
-  {
-    id: "forest" as ThemeId,
-    name: "Forest",
-    description: "Natural green tones",
-    preview: "#142b23",
-  },
-  {
-    id: "royal" as ThemeId,
-    name: "Royal",
-    description: "Elegant purple and indigo colors",
-    preview: "#241d40",
-  },
-  {
-    id: "sunset" as ThemeId,
-    name: "Sunset",
-    description: "Warm orange and brown tones",
-    preview: "#38241b",
-  },
-  {
-    id: "rose" as ThemeId,
-    name: "Rose",
-    description: "Soft pink and wine colors",
-    preview: "#351d2d",
-  },
-  {
-    id: "light" as ThemeId,
-    name: "Light",
-    description: "A clean bright interface",
-    preview: "#f5f5f5",
-  },
-  {
-    id: "slate" as ThemeId,
-    name: "Slate",
-    description: "Neutral gray professional theme",
-    preview: "#202631",
-  },
-];
 
 export default function SettingsModal({
   open,
@@ -84,6 +28,7 @@ export default function SettingsModal({
     };
 
     const previousOverflow = document.body.style.overflow;
+
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", handleKeyDown);
 
@@ -116,9 +61,13 @@ export default function SettingsModal({
       >
         <header className="flex items-start justify-between border-b border-[var(--border)] px-6 py-5">
           <div>
-            <h2 id="settings-title" className="text-2xl font-semibold">
+            <h2
+              id="settings-title"
+              className="text-2xl font-semibold"
+            >
               Settings
             </h2>
+
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               Customize your LocalGPT experience
             </p>
@@ -137,18 +86,19 @@ export default function SettingsModal({
         <div className="overflow-y-auto px-6 py-6">
           <div className="mb-5">
             <h3 className="text-lg font-semibold">Appearance</h3>
+
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               Choose a theme for the complete application.
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {themeOptions.map((option) => {
+            {THEMES.map((option) => {
               const selected = theme === option.id;
 
               return (
                 <button
-                  key={String(option.id)}
+                  key={option.id}
                   type="button"
                   aria-pressed={selected}
                   onClick={() => onThemeChange(option.id)}
@@ -161,13 +111,16 @@ export default function SettingsModal({
                   <span
                     aria-hidden="true"
                     className="h-16 w-16 shrink-0 rounded-xl border border-white/10 shadow-inner"
-                    style={{ backgroundColor: option.preview }}
+                    style={{
+                      backgroundColor: option.preview,
+                    }}
                   />
 
-                  <span className="min-w-0">
+                  <span className="min-w-0 flex-1">
                     <span className="block text-base font-semibold">
                       {option.name}
                     </span>
+
                     <span className="mt-1 block text-sm text-[var(--text-secondary)]">
                       {option.description}
                     </span>
