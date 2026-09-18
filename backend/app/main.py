@@ -2,9 +2,24 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import (
+    FastAPI,
+    HTTPException
+)
+
+from fastapi import Request
+
+from app.api.dependencies import (
+    get_current_user,
+    check_thread_ownership,
+)
+
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from fastapi import Depends
+
+from app.api.dependencies import get_current_user
 
 from fastapi import HTTPException
 
@@ -17,6 +32,9 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langchain_core.messages import AIMessage, HumanMessage
 
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.auth import router as auth_router
+from app.database.users import setup_users_table
 
 from app.agent.graph import build_graph
 
@@ -63,10 +81,20 @@ async def setup_conversations_table(database_url: str) -> None:
             """
             CREATE TABLE IF NOT EXISTS conversations (
                 thread_id TEXT PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
                 title TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            """
+        )
+
+        await connection.execute(
+            """
+            ALTER TABLE conversations
+            ADD COLUMN IF NOT EXISTS user_id UUID
+            REFERENCES users(id)
+            ON DELETE CASCADE;
             """
         )
 
@@ -77,6 +105,8 @@ async def lifespan(app: FastAPI):
 
     if not database_url:
         raise RuntimeError("DATABASE_URL is not configured")
+
+    await setup_users_table(database_url)
 
     await setup_conversations_table(database_url)
 
@@ -96,6 +126,7 @@ async def save_conversation(
     database_url: str,
     thread_id: str,
     title: str,
+    user_id,
 ) -> None:
     async with await AsyncConnection.connect(
         database_url,
@@ -105,15 +136,20 @@ async def save_conversation(
             """
             INSERT INTO conversations (
                 thread_id,
+                user_id,
                 title
             )
-            VALUES (%s, %s)
+            VALUES (%s, %s, %s)
             ON CONFLICT (thread_id)
             DO UPDATE SET
                 title = EXCLUDED.title,
                 updated_at = NOW();
             """,
-            (thread_id, title),
+            (
+                thread_id,
+                user_id,
+                title,
+            ),
         )
 
 
@@ -122,6 +158,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.include_router(auth_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -138,7 +176,21 @@ async def health():
 
 
 @app.get("/threads/{thread_id}")
-async def get_thread(thread_id: str):
+async def get_thread(
+    thread_id: str,
+    request: Request,
+    current_user=Depends(get_current_user),
+):
+    if not await check_thread_ownership(
+        request=request,
+        thread_id=thread_id,
+        user_id=current_user["id"],
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found",
+        )
+
     checkpointer = app.state.checkpointer
 
     config = {
@@ -157,8 +209,15 @@ async def get_thread(thread_id: str):
 
     checkpoint = checkpoint_tuple.checkpoint
 
-    channel_values = checkpoint.get("channel_values", {})
-    messages = channel_values.get("messages", [])
+    channel_values = checkpoint.get(
+        "channel_values",
+        {},
+    )
+
+    messages = channel_values.get(
+        "messages",
+        [],
+    )
 
     serialized_messages = []
 
@@ -166,16 +225,22 @@ async def get_thread(thread_id: str):
         converted_message = message_to_dict(message)
 
         if converted_message:
-            serialized_messages.append(converted_message)
+            serialized_messages.append(
+                converted_message
+            )
 
     return {
         "thread_id": thread_id,
         "messages": serialized_messages,
     }
-    
 
-@app.get("/threads", response_model=list[Conversation])
-async def get_threads():
+@app.get(
+    "/threads",
+    response_model=list[Conversation],
+)
+async def get_threads(
+    current_user=Depends(get_current_user),
+):
     database_url = app.state.database_url
 
     async with await AsyncConnection.connect(
@@ -189,8 +254,10 @@ async def get_threads():
                 created_at,
                 updated_at
             FROM conversations
+            WHERE user_id = %s
             ORDER BY updated_at DESC;
-            """
+            """,
+            (current_user["id"],),
         )
 
         rows = await cursor.fetchall()
@@ -207,7 +274,21 @@ async def get_threads():
 
 
 @app.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+    http_request: Request,
+    current_user=Depends(get_current_user),
+):
+    if not await check_thread_ownership(
+        request=http_request,
+        thread_id=request.thread_id,
+        user_id=current_user["id"],
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found",
+        )
+
     graph = app.state.graph
 
     result = await graph.ainvoke(
@@ -231,14 +312,47 @@ async def chat(request: ChatRequest):
 
 
 @app.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
-    graph = app.state.graph
+async def chat_stream(
+    request: ChatRequest,
+    http_request: Request,
+    current_user=Depends(get_current_user),
+):
+    database_url = app.state.database_url
 
+    # Check whether this conversation already exists.
+    async with await AsyncConnection.connect(
+        database_url
+    ) as connection:
+        cursor = await connection.execute(
+            """
+            SELECT user_id
+            FROM conversations
+            WHERE thread_id = %s;
+            """,
+            (request.thread_id,),
+        )
+
+        existing_conversation = await cursor.fetchone()
+
+    # Existing conversation
+    if existing_conversation is not None:
+        existing_user_id = existing_conversation[0]
+
+        if existing_user_id != current_user["id"]:
+            raise HTTPException(
+                status_code=404,
+                detail="Conversation not found",
+            )
+
+    # New conversation OR legacy conversation
     await save_conversation(
-        database_url=app.state.database_url,
+        database_url=database_url,
         thread_id=request.thread_id,
         title=request.message[:40],
+        user_id=current_user["id"],
     )
+
+    graph = app.state.graph
 
     async def generate():
         async for event in graph.astream_events(
@@ -268,7 +382,19 @@ async def chat_stream(request: ChatRequest):
 async def rename_thread(
     thread_id: str,
     request: RenameConversationRequest,
+    http_request: Request,
+    current_user=Depends(get_current_user),
 ):
+    if not await check_thread_ownership(
+        request=http_request,
+        thread_id=thread_id,
+        user_id=current_user["id"],
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found",
+        )
+
     title = request.title.strip()
 
     if not title:
@@ -281,6 +407,7 @@ async def rename_thread(
         database_url=app.state.database_url,
         thread_id=thread_id,
         title=title[:100],
+        user_id=current_user["id"],
     )
 
     return {
@@ -291,7 +418,21 @@ async def rename_thread(
     
 
 @app.delete("/threads/{thread_id}")
-async def delete_thread(thread_id: str):
+async def delete_thread(
+    thread_id: str,
+    request: Request,
+    current_user=Depends(get_current_user),
+):
+    if not await check_thread_ownership(
+        request=request,
+        thread_id=thread_id,
+        user_id=current_user["id"],
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found",
+        )
+
     database_url = app.state.database_url
 
     async with await AsyncConnection.connect(
