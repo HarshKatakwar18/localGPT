@@ -34,7 +34,11 @@ from langchain_core.messages import AIMessage, HumanMessage
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
-from app.database.users import setup_users_table
+
+from app.database.users import (
+    setup_users_table,
+    setup_refresh_tokens_table,
+)
 
 from app.agent.graph import build_graph
 
@@ -107,6 +111,8 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("DATABASE_URL is not configured")
 
     await setup_users_table(database_url)
+    
+    await setup_refresh_tokens_table(database_url)
 
     await setup_conversations_table(database_url)
 
@@ -163,7 +169,7 @@ app.include_router(auth_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000","http://127.0.0.1:3000",],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

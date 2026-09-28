@@ -57,7 +57,8 @@ async def get_current_user(
         "name": user[1],
         "email": user[2],
     }
-    
+
+
 async def check_thread_ownership(
     request: Request,
     thread_id: str,

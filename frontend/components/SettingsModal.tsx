@@ -8,6 +8,7 @@ type SettingsModalProps = {
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
   onClose: () => void;
+  onLogout: () => void;
 };
 
 export default function SettingsModal({
@@ -15,6 +16,7 @@ export default function SettingsModal({
   theme,
   onThemeChange,
   onClose,
+  onLogout,
 }: SettingsModalProps) {
   useEffect(() => {
     if (!open) {
@@ -59,6 +61,7 @@ export default function SettingsModal({
         className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-2xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
+        {/* Header */}
         <header className="flex items-start justify-between border-b border-[var(--border)] px-6 py-5">
           <div>
             <h2
@@ -83,63 +86,104 @@ export default function SettingsModal({
           </button>
         </header>
 
+        {/* Content */}
         <div className="overflow-y-auto px-6 py-6">
-          <div className="mb-5">
-            <h3 className="text-lg font-semibold">Appearance</h3>
 
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              Choose a theme for the complete application.
-            </p>
+          {/* Account */}
+          <div className="mb-8">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold">
+                Account
+              </h3>
+
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                Manage your LocalGPT account and authentication.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4">
+              <div>
+                <p className="font-medium">
+                  You are currently logged in
+                </p>
+
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                  Your LocalGPT account is authenticated.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={onLogout}
+                className="rounded-xl border border-red-500/40 px-4 py-2.5 font-medium text-red-400 transition hover:bg-red-500/10"
+              >
+                Log out
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {THEMES.map((option) => {
-              const selected = theme === option.id;
+          {/* Appearance */}
+          <div>
+            <div className="mb-5">
+              <h3 className="text-lg font-semibold">
+                Appearance
+              </h3>
 
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => onThemeChange(option.id)}
-                  className={`flex items-center gap-4 rounded-2xl border p-4 text-left transition ${
-                    selected
-                      ? "border-[var(--accent)] bg-[var(--background)] ring-2 ring-[var(--accent)]"
-                      : "border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--background)]"
-                  }`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="h-16 w-16 shrink-0 rounded-xl border border-white/10 shadow-inner"
-                    style={{
-                      backgroundColor: option.preview,
-                    }}
-                  />
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                Choose a theme for the complete application.
+              </p>
+            </div>
 
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-base font-semibold">
-                      {option.name}
-                    </span>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {THEMES.map((option) => {
+                const selected = theme === option.id;
 
-                    <span className="mt-1 block text-sm text-[var(--text-secondary)]">
-                      {option.description}
-                    </span>
-                  </span>
-
-                  {selected && (
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => onThemeChange(option.id)}
+                    className={`flex items-center gap-4 rounded-2xl border p-4 text-left transition ${
+                      selected
+                        ? "border-[var(--accent)] bg-[var(--background)] ring-2 ring-[var(--accent)]"
+                        : "border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--background)]"
+                    }`}
+                  >
                     <span
                       aria-hidden="true"
-                      className="ml-auto self-start text-lg text-[var(--accent)]"
-                    >
-                      ✓
+                      className="h-16 w-16 shrink-0 rounded-xl border border-white/10 shadow-inner"
+                      style={{
+                        backgroundColor: option.preview,
+                      }}
+                    />
+
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-base font-semibold">
+                        {option.name}
+                      </span>
+
+                      <span className="mt-1 block text-sm text-[var(--text-secondary)]">
+                        {option.description}
+                      </span>
                     </span>
-                  )}
-                </button>
-              );
-            })}
+
+                    {selected && (
+                      <span
+                        aria-hidden="true"
+                        className="ml-auto self-start text-lg text-[var(--accent)]"
+                      >
+                        ✓
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
+        {/* Footer */}
         <footer className="flex justify-end border-t border-[var(--border)] px-6 py-5">
           <button
             type="button"

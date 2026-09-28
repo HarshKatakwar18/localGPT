@@ -1,13 +1,17 @@
 "use client";
 
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+
+import { useRouter } from "next/navigation";
 import SettingsModal from "@/components/SettingsModal";
 import { ThemeId } from "@/lib/themes";
 
 import {
+  AuthenticationError,
   deleteThread as deleteThreadApi,
   getThread,
   getThreads,
+  logoutUser,
   renameThread,
   streamChat,
 } from "@/lib/api";
@@ -73,23 +77,25 @@ function TooltipButton({
 }
 
 export default function Home() {
+  const router = useRouter();
+
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(true);
 
   const [theme, setTheme] = useState<ThemeId>(() => {
-  if (typeof window === "undefined") {
-    return "midnight";
-  }
+    if (typeof window === "undefined") {
+      return "midnight";
+    }
 
-  const savedTheme = localStorage.getItem("localgpt-theme");
+    const savedTheme = localStorage.getItem("localgpt-theme");
 
-  return (savedTheme as ThemeId | null) ?? "midnight";
-});
-
+    return (savedTheme as ThemeId | null) ?? "midnight";
+  });
 
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -103,64 +109,98 @@ export default function Home() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-  let cancelled = false;
+    let cancelled = false;
 
-  async function loadApplication() {
-    try {
-      const backendThreads = await getThreads();
-
-      if (cancelled) {
-        return;
-      }
-
-      const convertedThreads: ChatThread[] = backendThreads.map((thread) => ({
-        id: thread.thread_id,
-        title: thread.title,
-      }));
-
-      setThreads(convertedThreads);
-
-      const savedThreadId = localStorage.getItem("localgpt-thread-id");
-
-      if (
-        savedThreadId &&
-        convertedThreads.some((thread) => thread.id === savedThreadId)
-      ) {
-        const loadedMessages = await getThread(savedThreadId);
+    async function loadApplication() {
+      try {
+        /*
+         * Do not check localStorage directly here.
+         *
+         * getThreads() now goes through the centralized
+         * authentication layer in api.ts.
+         *
+         * If the access token is missing or expired,
+         * api.ts can use the HttpOnly refresh-token cookie
+         * to obtain a new access token automatically.
+         */
+        const backendThreads = await getThreads();
 
         if (cancelled) {
           return;
         }
 
-        const convertedMessages: ChatMessage[] = loadedMessages.map(
-          (message, index) => ({
-            id: `${savedThreadId}-${index}`,
-            role: message.role,
-            content: message.content,
-          }),
-        );
+        const convertedThreads: ChatThread[] = backendThreads.map((thread) => ({
+          id: thread.thread_id,
+          title: thread.title,
+        }));
 
-        setActiveThreadId(savedThreadId);
-        setMessages(convertedMessages);
+        setThreads(convertedThreads);
+
+        const savedThreadId = localStorage.getItem("localgpt-thread-id");
+
+        if (
+          savedThreadId &&
+          convertedThreads.some((thread) => thread.id === savedThreadId)
+        ) {
+          const loadedMessages = await getThread(savedThreadId);
+
+          if (cancelled) {
+            return;
+          }
+
+          const convertedMessages: ChatMessage[] = loadedMessages.map(
+            (message, index) => ({
+              id: `${savedThreadId}-${index}`,
+              role: message.role,
+              content: message.content,
+            }),
+          );
+
+          setActiveThreadId(savedThreadId);
+          setMessages(convertedMessages);
+        }
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        /*
+         * AuthenticationError means that:
+         *
+         * 1. There was no valid access token, AND
+         * 2. The refresh session could not restore authentication.
+         *
+         * Only in this case should we redirect to login.
+         */
+        if (error instanceof AuthenticationError) {
+          router.replace("/login");
+          return;
+        }
+
+        /*
+         * Other errors should not be treated as authentication
+         * failures. For example, the backend could simply be
+         * temporarily unavailable.
+         */
+        console.error("Failed to initialize LocalGPT:", error);
+      } finally {
+        if (!cancelled) {
+          setIsInitializing(false);
+        }
       }
-    } catch (error) {
-      console.error("Failed to initialize LocalGPT:", error);
     }
-  }
 
-  void loadApplication();
+    void loadApplication();
 
-  return () => {
-    cancelled = true;
-  };
-}, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
-
-
-useEffect(() => {
-  document.documentElement.dataset.theme = theme;
-  localStorage.setItem("localgpt-theme", theme);
-}, [theme]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("localgpt-theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -168,6 +208,23 @@ useEffect(() => {
     });
   }, [messages]);
 
+  async function handleLogout() {
+    try {
+      await logoutUser();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    } finally {
+      localStorage.removeItem("localgpt-thread-id");
+
+      setThreads([]);
+      setMessages([]);
+      setActiveThreadId("");
+      setInput("");
+      setSettingsOpen(false);
+
+      router.replace("/login");
+    }
+  }
 
   async function refreshThreads() {
     try {
@@ -400,6 +457,22 @@ useEffect(() => {
         event.currentTarget.form?.requestSubmit();
       }
     }
+  }
+
+  if (isInitializing) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[var(--background)] text-[var(--text-primary)]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--accent)] text-2xl text-white">
+            ✦
+          </div>
+
+          <p className="text-sm text-[var(--text-secondary)]">
+            Loading LocalGPT...
+          </p>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -721,6 +794,7 @@ useEffect(() => {
         theme={theme}
         onThemeChange={setTheme}
         onClose={() => setSettingsOpen(false)}
+        onLogout={handleLogout}
       />
     </main>
   );
