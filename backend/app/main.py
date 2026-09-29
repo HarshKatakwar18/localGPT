@@ -62,17 +62,118 @@ class RenameConversationRequest(BaseModel):
     title: str
 
     
+def content_to_text(content) -> str:
+    """
+    Normalize LangChain message content into plain text.
+
+    Gemini may return structured content blocks like:
+    {
+        "type": "text",
+        "text": "...",
+        "index": 0,
+        "extras": {}
+    }
+
+    The frontend should receive only a string.
+    """
+
+    # Normal string content
+    if isinstance(content, str):
+        return content
+
+    # Gemini / LangChain structured content
+    if isinstance(content, list):
+        parts = []
+
+        for item in content:
+            # Example: plain string inside content list
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+
+            # Example:
+            # {
+            #     "type": "text",
+            #     "text": "...",
+            #     "index": 0,
+            #     "extras": {}
+            # }
+            if isinstance(item, dict):
+                text = item.get("text")
+
+                if isinstance(text, str):
+                    parts.append(text)
+                    continue
+
+                # Fallback for other structured content
+                nested_content = item.get("content")
+
+                if isinstance(nested_content, str):
+                    parts.append(nested_content)
+
+        return "".join(parts)
+
+    # Handle a single structured dictionary
+    if isinstance(content, dict):
+        text = content.get("text")
+
+        if isinstance(text, str):
+            return text
+
+        nested_content = content.get("content")
+
+        if isinstance(nested_content, str):
+            return nested_content
+
+        return ""
+
+    # Last-resort conversion
+    return str(content)
+
+
+def normalize_content(content) -> str:
+    """
+    Convert LangChain/Gemini message content into plain text
+    so the frontend always receives a string.
+    """
+
+    if content is None:
+        return ""
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        parts = []
+
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+
+            elif isinstance(item, dict):
+                text = item.get("text")
+
+                if isinstance(text, str):
+                    parts.append(text)
+
+        return "".join(parts)
+
+    return str(content)
+
+
 def message_to_dict(message):
     if isinstance(message, HumanMessage):
         role = "user"
+
     elif isinstance(message, AIMessage):
         role = "assistant"
+
     else:
         return None
 
     return {
         "role": role,
-        "content": message.content,
+        "content": normalize_content(message.content),
     }
 
 
@@ -313,7 +414,7 @@ async def chat(
     response = result["messages"][-1]
 
     return {
-        "response": response.content
+        "response": content_to_text(response.content)
     }
 
 
@@ -375,8 +476,13 @@ async def chat_stream(
 
             chunk = event["data"]["chunk"]
 
+            chunk = event["data"]["chunk"]
+
             if chunk.content:
-                yield chunk.content
+                content = normalize_content(chunk.content)
+
+                if content:
+                    yield content
 
     return StreamingResponse(
         generate(),
