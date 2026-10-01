@@ -47,6 +47,22 @@ type DeleteThreadResponse = {
   thread_id: string;
 };
 
+export type RagDocument = {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  created_at: string;
+};
+
+export type UploadDocumentResponse = {
+  document_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  chunk_count: number;
+};
+
 /* =========================
    Authentication Errors
 ========================= */
@@ -459,4 +475,66 @@ export async function deleteThread(
   }
 
   return (await response.json()) as DeleteThreadResponse;
+}
+
+/* =========================
+   RAG Documents
+========================= */
+
+export async function uploadDocument(
+  file: File,
+): Promise<UploadDocumentResponse> {
+  const formData = new FormData();
+
+  formData.append("file", file);
+
+  const response = await authenticatedFetch(
+    `${API_BASE_URL}/rag/documents`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+
+  return (await response.json()) as UploadDocumentResponse;
+}
+
+export async function getDocuments(): Promise<RagDocument[]> {
+  const response = await authenticatedFetch(
+    `${API_BASE_URL}/rag/documents`,
+    {
+      method: "GET",
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+
+  return (await response.json()) as RagDocument[];
+}
+
+export async function deleteDocument(
+  documentId: string,
+): Promise<{ message: string; document_id: string }> {
+  const response = await authenticatedFetch(
+    `${API_BASE_URL}/rag/documents/${encodeURIComponent(documentId)}`,
+    {
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+
+  return (await response.json()) as {
+    message: string;
+    document_id: string;
+  };
 }

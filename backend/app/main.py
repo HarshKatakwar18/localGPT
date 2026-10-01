@@ -40,6 +40,10 @@ from app.database.users import (
     setup_refresh_tokens_table,
 )
 
+from app.database.rag import setup_rag_tables
+
+from app.api.rag import router as rag_router
+
 from app.agent.graph import build_graph
 
 
@@ -216,6 +220,8 @@ async def lifespan(app: FastAPI):
     await setup_refresh_tokens_table(database_url)
 
     await setup_conversations_table(database_url)
+    
+    await setup_rag_tables(database_url)
 
     async with AsyncPostgresSaver.from_conn_string(
         database_url
@@ -267,6 +273,8 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+
+app.include_router(rag_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -386,6 +394,8 @@ async def chat(
     http_request: Request,
     current_user=Depends(get_current_user),
 ):
+    database_url = app.state.database_url
+
     if not await check_thread_ownership(
         request=http_request,
         thread_id=request.thread_id,
@@ -399,17 +409,19 @@ async def chat(
     graph = app.state.graph
 
     result = await graph.ainvoke(
-        {
-            "messages": [
-                ("human", request.message)
-            ]
-        },
-        config={
-            "configurable": {
-                "thread_id": request.thread_id
-            }
-        },
-    )
+    {
+        "messages": [
+            ("human", request.message)
+        ]
+    },
+    config={
+        "configurable": {
+            "thread_id": request.thread_id,
+            "user_id": str(current_user["id"]),
+            "database_url": database_url,
+        }
+    },
+)
 
     response = result["messages"][-1]
 
@@ -466,7 +478,9 @@ async def chat_stream(
             {"messages": [("human", request.message)]},
             config={
                 "configurable": {
-                    "thread_id": request.thread_id,
+                "thread_id": request.thread_id,
+                "user_id": str(current_user["id"]),
+                "database_url": database_url,
                 }
             },
             version="v2",

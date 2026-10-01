@@ -1,4 +1,5 @@
 from langchain_core.messages import SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -31,10 +32,17 @@ Important tool usage rules:
 8. If the answer is already clearly available from the conversation, do not unnecessarily use a tool.
 9. If the user provides personal information such as their name, use that information when relevant.
 10. Do not claim that you cannot access information that is clearly present in the conversation.
+11. Use the document search tool when the user asks about information that may be contained in their uploaded documents.
+12. When answering questions about uploaded documents, rely on the information returned by the document search tool.
+13. If document search returns no relevant information, clearly say that the uploaded documents do not contain relevant information. Do not invent or assume document contents.
+14. When document search returns relevant content, answer using that content and mention the source filename when useful.
 """
 
 
-async def chatbot_node(state: ChatState):
+async def chatbot_node(
+    state: ChatState,
+    config: RunnableConfig,
+):
     messages = [
         SystemMessage(
             content=SYSTEM_PROMPT
@@ -42,7 +50,10 @@ async def chatbot_node(state: ChatState):
         *state["messages"],
     ]
 
-    response = await llm_with_tools.ainvoke(messages)
+    response = await llm_with_tools.ainvoke(
+        messages,
+        config=config,
+    )
 
     return {
         "messages": [response]

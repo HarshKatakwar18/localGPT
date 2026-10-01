@@ -8,12 +8,14 @@ import { ThemeId } from "@/lib/themes";
 
 import {
   AuthenticationError,
+  deleteDocument,
   deleteThread as deleteThreadApi,
   getThread,
   getThreads,
   logoutUser,
   renameThread,
   streamChat,
+  uploadDocument,
 } from "@/lib/api";
 
 import type { ChatMessage, ChatThread } from "@/types/chat";
@@ -76,6 +78,16 @@ function TooltipButton({
   );
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function Home() {
   const router = useRouter();
 
@@ -84,6 +96,14 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const [uploadedDocument, setUploadedDocument] = useState<{
+    id: string;
+    filename: string;
+    size_bytes: number;
+  } | null>(null);
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isInitializing, setIsInitializing] = useState(true);
 
@@ -107,6 +127,7 @@ export default function Home() {
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -348,6 +369,61 @@ export default function Home() {
       console.error("Failed to delete conversation:", error);
     } finally {
       setOpenMenuId(null);
+    }
+  }
+
+  async function handleDocumentUpload(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const allowedTypes = [
+      "application/pdf",
+      "text/plain",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      window.alert("Please upload a PDF, TXT, or DOCX file.");
+      event.target.value = "";
+      return;
+    }
+
+    const maxSize = 10 * 1024 * 1024;
+
+    if (file.size > maxSize) {
+      window.alert("File size must be 10 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+
+      const result = await uploadDocument(file);
+
+      setUploadedDocument({
+        id: result.document_id,
+        filename: result.filename,
+        size_bytes: result.size_bytes,
+      });
+    } catch (error) {
+      console.error("Document upload failed:", error);
+
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Failed to upload the document.",
+      );
+    } finally {
+      setIsUploading(false);
+
+      // Allows selecting the same file again later.
+      event.target.value = "";
     }
   }
 
@@ -743,6 +819,55 @@ export default function Home() {
               onSubmit={handleSubmit}
               className="relative rounded-3xl bg-[var(--surface)] shadow-sm transition focus-within:bg-[#353535]"
             >
+              {/* Uploaded document */}
+              {(isUploading || uploadedDocument) && (
+                <div className="absolute left-4 right-4 top-3 z-10">
+                  <div className="flex items-center gap-3 rounded-2xl border border-[#454545] bg-[#2a2a2a] px-3 py-2.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#3a3a3a] text-lg">
+                      📄
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      {isUploading ? (
+                        <>
+                          <p className="truncate text-sm text-white">
+                            Processing document...
+                          </p>
+
+                          <p className="text-xs text-[#8e8e8e]">
+                            Uploading and creating embeddings
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="truncate text-sm text-white">
+                            {uploadedDocument?.filename}
+                          </p>
+
+                          <p className="text-xs text-[#8e8e8e]">
+                            {formatFileSize(uploadedDocument?.size_bytes ?? 0)}{" "}
+                            · Ready
+                          </p>
+                        </>
+                      )}
+                    </div>
+
+                    {!isUploading && uploadedDocument && (
+                      <button
+                        type="button"
+                        onClick={() => setUploadedDocument(null)}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#8e8e8e] transition hover:bg-[#444] hover:text-white"
+                        aria-label="Remove document"
+                        title="Remove document"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Message input */}
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -751,20 +876,34 @@ export default function Home() {
                 placeholder="Message LocalGPT"
                 rows={1}
                 disabled={isLoading}
-                className="max-h-[180px] min-h-[56px] w-full resize-none rounded-3xl border-0 bg-transparent px-5 pb-14 pt-4 text-[15px] text-white placeholder:text-[#8e8e8e] outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 disabled:cursor-not-allowed"
+                className={`max-h-[180px] min-h-[56px] w-full resize-none rounded-3xl border-0 bg-transparent px-5 pb-14 text-[15px] text-white placeholder:text-[#8e8e8e] outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 disabled:cursor-not-allowed ${
+                  uploadedDocument || isUploading ? "pt-[76px]" : "pt-4"
+                }`}
               />
 
+              {/* Attach button */}
               <div className="absolute bottom-3 left-4">
                 <button
                   type="button"
-                  title="Attach files"
-                  aria-label="Attach files"
-                  className="rounded-full p-1 text-xl text-[#b4b4b4] transition hover:bg-[#444] hover:text-white"
+                  title="Attach document"
+                  aria-label="Attach document"
+                  disabled={isLoading || isUploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-full p-1 text-xl text-[#b4b4b4] transition hover:bg-[#444] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   ＋
                 </button>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.txt,.docx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(event) => void handleDocumentUpload(event)}
+                  className="hidden"
+                />
               </div>
 
+              {/* Send button */}
               <div className="absolute bottom-3 right-3">
                 <button
                   type="submit"
