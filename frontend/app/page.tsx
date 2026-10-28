@@ -1,5 +1,11 @@
 "use client";
 
+import MarkdownRenderer from "@/components/MarkdownRenderer";
+
+import { useAudioRecorder } from "@/hooks/useAudioRecorder";
+import VoiceRecordingPanel from "@/components/VoiceRecordingPanel";
+import { transcribeAudio } from "@/lib/api";
+
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 
 import { useRouter } from "next/navigation";
@@ -8,13 +14,13 @@ import { ThemeId } from "@/lib/themes";
 
 import {
   AuthenticationError,
-  deleteDocument,
   deleteThread as deleteThreadApi,
   getThread,
   getThreads,
   logoutUser,
   renameThread,
   streamChat,
+  speakText,
   uploadDocument,
 } from "@/lib/api";
 
@@ -47,6 +53,39 @@ function SidebarIcon({ children }: { children: ReactNode }) {
       strokeLinejoin="round"
     >
       {children}
+    </svg>
+  );
+}
+
+function MicrophoneIcon({
+  className = "h-5 w-5",
+}: {
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <rect
+        x="9"
+        y="2.5"
+        width="6"
+        height="11"
+        rx="3"
+      />
+
+      <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
+
+      <path d="M12 18v3.5" />
+
+      <path d="M8.5 21.5h7" />
     </svg>
   );
 }
@@ -88,6 +127,48 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function SpeakerIcon({ speaking = false }: { speaking?: boolean }) {
+  if (speaking) {
+    return (
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <rect x="6" y="4" width="12" height="16" rx="6" />
+        <path d="M9 9v6" />
+        <path d="M12 7v10" />
+        <path d="M15 9v6" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18.5 6a8.5 8.5 0 0 1 0 12" />
+    </svg>
+  );
+}
+
+
 export default function Home() {
   const router = useRouter();
 
@@ -97,6 +178,28 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(
+  null,
+);
+
+const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
+
+const audioRef = useRef<HTMLAudioElement | null>(null);
+const audioUrlRef = useRef<string | null>(null);
+const speechRequestIdRef = useRef(0);
+
+  const {
+  isRecording,
+  elapsedSeconds,
+  waveform,
+  error: recordingError,
+  startRecording,
+  stopRecording,
+  cancelRecording,
+} = useAudioRecorder();
+
+const [isTranscribing, setIsTranscribing] = useState(false);
 
   const [uploadedDocument, setUploadedDocument] = useState<{
     id: string;
@@ -228,6 +331,22 @@ export default function Home() {
       behavior: "smooth",
     });
   }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      speechRequestIdRef.current += 1;
+
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+    };
+  }, []);
 
   async function handleLogout() {
     try {
@@ -425,6 +544,142 @@ export default function Home() {
       // Allows selecting the same file again later.
       event.target.value = "";
     }
+  }
+
+  async function handleVoiceInput() {
+    if (isLoading || isTranscribing) {
+      return;
+    }
+
+    if (!isRecording) {
+      await startRecording();
+      return;
+    }
+
+    setIsTranscribing(true);
+
+    try {
+      const audioBlob = await stopRecording();
+
+      if (!audioBlob) {
+        return;
+      }
+
+      const transcript = await transcribeAudio(audioBlob);
+
+      if (!transcript.trim()) {
+        return;
+      }
+
+      setInput((previous) => {
+        const existingText = previous.trim();
+        const newText = transcript.trim();
+
+        if (!existingText) {
+          return newText;
+        }
+
+        return `${existingText} ${newText}`;
+      });
+    } catch (error) {
+      console.error("Voice transcription failed:", error);
+    } finally {
+      setIsTranscribing(false);
+    }
+  }
+
+  function handleCancelRecording() {
+    if (isTranscribing) {
+      return;
+    }
+
+    cancelRecording();
+  }
+
+  async function handleSpeakMessage(messageId: string, text: string) {
+    if (!text.trim()) {
+      return;
+    }
+
+    // If this message is currently playing, stop it.
+    if (speakingMessageId === messageId) {
+      stopSpeech();
+      return;
+    }
+
+    // Stop any currently playing audio.
+    stopSpeech();
+
+    const requestId = ++speechRequestIdRef.current;
+
+    setSpeakingMessageId(messageId);
+    setIsGeneratingSpeech(true);
+
+    try {
+      const audioBlob = await speakText(text);
+
+      // A newer speech request has started.
+      // Ignore this result.
+      if (requestId !== speechRequestIdRef.current) {
+        return;
+      }
+
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      audioUrlRef.current = audioUrl;
+
+      const audio = new Audio(audioUrl);
+
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        if (requestId !== speechRequestIdRef.current) {
+          return;
+        }
+
+        cleanupSpeech();
+      };
+
+      audio.onerror = () => {
+        if (requestId !== speechRequestIdRef.current) {
+          return;
+        }
+
+        cleanupSpeech();
+      };
+
+      setIsGeneratingSpeech(false);
+
+      await audio.play();
+    } catch (error) {
+      console.error("Text-to-speech failed:", error);
+
+      if (requestId === speechRequestIdRef.current) {
+        cleanupSpeech();
+      }
+    }
+  }
+
+  function stopSpeech() {
+    speechRequestIdRef.current += 1;
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+
+    cleanupSpeech();
+  }
+
+  function cleanupSpeech() {
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+
+    setSpeakingMessageId(null);
+    setIsGeneratingSpeech(false);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -781,23 +1036,74 @@ export default function Home() {
                       message.role === "user" ? "justify-end" : "justify-start"
                     }`}
                   >
+                    {/* Assistant avatar */}
                     {message.role === "assistant" && (
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-white">
                         ✦
                       </div>
                     )}
 
+                    {/* Message content + actions */}
                     <div
-                      className={`max-w-[85%] whitespace-pre-wrap text-[15px] leading-7 ${
+                      className={`max-w-[85%] text-[15px] leading-7 ${
                         message.role === "user"
                           ? "rounded-3xl bg-[var(--surface)] px-5 py-3 text-white"
                           : "pt-1 text-[var(--text-primary)]"
                       }`}
                     >
-                      {message.content ||
-                        (isLoading && message.role === "assistant" ? "▍" : "")}
+                      {/* Message content */}
+                      {message.role === "assistant" ? (
+                        message.content ? (
+                          <MarkdownRenderer content={message.content} />
+                        ) : isLoading ? (
+                          <span>▍</span>
+                        ) : null
+                      ) : (
+                        message.content
+                      )}
+
+                      {/* Assistant message actions */}
+                      {message.role === "assistant" && message.content && (
+                        <div className="mt-2 flex items-center">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleSpeakMessage(
+                                message.id,
+                                message.content,
+                              )
+                            }
+                            disabled={
+                              isGeneratingSpeech &&
+                              speakingMessageId !== message.id
+                            }
+                            title={
+                              speakingMessageId === message.id
+                                ? "Stop speaking"
+                                : "Read aloud"
+                            }
+                            aria-label={
+                              speakingMessageId === message.id
+                                ? "Stop speaking"
+                                : "Read aloud"
+                            }
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8e8e8e] transition hover:bg-[var(--surface)] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {speakingMessageId === message.id ? (
+                              <span className="flex items-center gap-[2px]">
+                                <span className="h-3 w-[2px] animate-pulse rounded-full bg-current" />
+                                <span className="h-4 w-[2px] animate-pulse rounded-full bg-current [animation-delay:120ms]" />
+                                <span className="h-3 w-[2px] animate-pulse rounded-full bg-current [animation-delay:240ms]" />
+                              </span>
+                            ) : (
+                              <SpeakerIcon />
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </div>
 
+                    {/* User avatar */}
                     {message.role === "user" && (
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#565656] text-sm font-semibold text-white">
                         H
@@ -815,115 +1121,162 @@ export default function Home() {
         {/* Composer */}
         <div className="shrink-0 px-4 pb-5 pt-3">
           <div className="mx-auto w-full max-w-3xl">
-            <form
-              onSubmit={handleSubmit}
-              className="relative rounded-3xl bg-[var(--surface)] shadow-sm transition focus-within:bg-[#353535]"
-            >
-              {/* Uploaded document */}
-              {(isUploading || uploadedDocument) && (
-                <div className="absolute left-4 right-4 top-3 z-10">
-                  <div className="flex items-center gap-3 rounded-2xl border border-[#454545] bg-[#2a2a2a] px-3 py-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#3a3a3a] text-lg">
-                      📄
+            {isRecording || isTranscribing ? (
+              /* Voice Recording UI */
+              <VoiceRecordingPanel
+                waveform={waveform}
+                elapsedSeconds={elapsedSeconds}
+                isTranscribing={isTranscribing}
+                onCancel={handleCancelRecording}
+                onStop={handleVoiceInput}
+              />
+            ) : (
+              /* Normal Composer */
+              <>
+                <form
+                  onSubmit={handleSubmit}
+                  className="relative rounded-3xl bg-[var(--surface)] shadow-sm transition focus-within:bg-[#353535]"
+                >
+                  {/* Uploaded document */}
+                  {(isUploading || uploadedDocument) && (
+                    <div className="absolute left-4 right-4 top-3 z-10">
+                      <div className="flex items-center gap-3 rounded-2xl border border-[#454545] bg-[#2a2a2a] px-3 py-2.5">
+                        {/* File icon */}
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#3a3a3a] text-lg">
+                          📄
+                        </div>
+
+                        {/* File information */}
+                        <div className="min-w-0 flex-1">
+                          {isUploading ? (
+                            <>
+                              <p className="truncate text-sm text-white">
+                                Processing document...
+                              </p>
+
+                              <p className="text-xs text-[#8e8e8e]">
+                                Uploading and creating embeddings
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="truncate text-sm text-white">
+                                {uploadedDocument?.filename}
+                              </p>
+
+                              <p className="text-xs text-[#8e8e8e]">
+                                {formatFileSize(
+                                  uploadedDocument?.size_bytes ?? 0,
+                                )}{" "}
+                                · Ready
+                              </p>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Remove document */}
+                        {!isUploading && uploadedDocument && (
+                          <button
+                            type="button"
+                            onClick={() => setUploadedDocument(null)}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#8e8e8e] transition hover:bg-[#444] hover:text-white"
+                            aria-label="Remove document"
+                            title="Remove document"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
                     </div>
+                  )}
 
-                    <div className="min-w-0 flex-1">
-                      {isUploading ? (
-                        <>
-                          <p className="truncate text-sm text-white">
-                            Processing document...
-                          </p>
+                  {/* Message input */}
+                  <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Message LocalGPT"
+                    rows={1}
+                    disabled={isLoading || isTranscribing}
+                    className={`max-h-[180px] min-h-[56px] w-full resize-none rounded-3xl border-0 bg-transparent px-5 pb-14 text-[15px] text-white placeholder:text-[#8e8e8e] outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 disabled:cursor-not-allowed ${
+                      uploadedDocument || isUploading ? "pt-[76px]" : "pt-4"
+                    }`}
+                  />
 
-                          <p className="text-xs text-[#8e8e8e]">
-                            Uploading and creating embeddings
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="truncate text-sm text-white">
-                            {uploadedDocument?.filename}
-                          </p>
-
-                          <p className="text-xs text-[#8e8e8e]">
-                            {formatFileSize(uploadedDocument?.size_bytes ?? 0)}{" "}
-                            · Ready
-                          </p>
-                        </>
-                      )}
-                    </div>
-
-                    {!isUploading && uploadedDocument && (
+                  {/* Bottom controls */}
+                  <div className="absolute bottom-3 left-4 right-3 flex items-center justify-between">
+                    {/* Left controls */}
+                    <div className="flex items-center gap-1">
+                      {/* Attach document */}
                       <button
                         type="button"
-                        onClick={() => setUploadedDocument(null)}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#8e8e8e] transition hover:bg-[#444] hover:text-white"
-                        aria-label="Remove document"
-                        title="Remove document"
+                        title="Attach document"
+                        aria-label="Attach document"
+                        disabled={isLoading || isUploading || isTranscribing}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex h-9 w-9 items-center justify-center rounded-full text-[#b4b4b4] transition-all duration-200 hover:bg-[#444] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        ×
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          className="h-[20px] w-[20px]"
+                        >
+                          <path d="M12 5v14" strokeLinecap="round" />
+                          <path d="M5 12h14" strokeLinecap="round" />
+                        </svg>
                       </button>
-                    )}
+
+                      {/* Hidden file input */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.txt,.docx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={(event) => void handleDocumentUpload(event)}
+                        className="hidden"
+                      />
+                    </div>
+
+                    {/* Right controls */}
+                    <div className="flex items-center gap-1">
+                      {/* Microphone */}
+                      <button
+                        type="button"
+                        onClick={handleVoiceInput}
+                        disabled={isLoading || isUploading || isTranscribing}
+                        title="Voice input"
+                        aria-label="Voice input"
+                        className="flex h-9 w-9 items-center justify-center rounded-full text-[#b4b4b4] transition-all duration-200 hover:bg-[#444] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <MicrophoneIcon className="h-[19px] w-[19px]" />
+                      </button>
+
+                      {/* Send */}
+                      <button
+                        type="submit"
+                        disabled={isLoading || isTranscribing || !input.trim()}
+                        title="Send message"
+                        aria-label="Send message"
+                        className={`flex h-9 w-9 items-center justify-center rounded-full text-lg transition-all duration-200 ${
+                          isLoading || isTranscribing || !input.trim()
+                            ? "cursor-not-allowed bg-[#676767] text-[#aaa]"
+                            : "bg-white text-black hover:bg-[#d9d9d9]"
+                        }`}
+                      >
+                        ↑
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                </form>
 
-              {/* Message input */}
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="Message LocalGPT"
-                rows={1}
-                disabled={isLoading}
-                className={`max-h-[180px] min-h-[56px] w-full resize-none rounded-3xl border-0 bg-transparent px-5 pb-14 text-[15px] text-white placeholder:text-[#8e8e8e] outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 disabled:cursor-not-allowed ${
-                  uploadedDocument || isUploading ? "pt-[76px]" : "pt-4"
-                }`}
-              />
-
-              {/* Attach button */}
-              <div className="absolute bottom-3 left-4">
-                <button
-                  type="button"
-                  title="Attach document"
-                  aria-label="Attach document"
-                  disabled={isLoading || isUploading}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="rounded-full p-1 text-xl text-[#b4b4b4] transition hover:bg-[#444] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  ＋
-                </button>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.txt,.docx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={(event) => void handleDocumentUpload(event)}
-                  className="hidden"
-                />
-              </div>
-
-              {/* Send button */}
-              <div className="absolute bottom-3 right-3">
-                <button
-                  type="submit"
-                  disabled={isLoading || !input.trim()}
-                  title="Send message"
-                  aria-label="Send message"
-                  className={`flex h-9 w-9 items-center justify-center rounded-full text-lg transition ${
-                    isLoading || !input.trim()
-                      ? "cursor-not-allowed bg-[#676767] text-[#aaa]"
-                      : "bg-white text-black hover:bg-[#d9d9d9]"
-                  }`}
-                >
-                  ↑
-                </button>
-              </div>
-            </form>
-
-            <p className="mt-2 text-center text-xs text-[#8e8e8e]">
-              LocalGPT can make mistakes. Check important information.
-            </p>
+                {/* Disclaimer */}
+                <p className="mt-2 text-center text-xs text-[#8e8e8e]">
+                  LocalGPT can make mistakes. Check important information.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </section>

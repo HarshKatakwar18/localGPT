@@ -538,3 +538,72 @@ export async function deleteDocument(
     document_id: string;
   };
 }
+
+/* =========================
+   Voice / Speech-to-Text
+========================= */
+
+export async function transcribeAudio(
+  audioBlob: Blob,
+): Promise<string> {
+  const formData = new FormData();
+
+  formData.append(
+    "file",
+    audioBlob,
+    "localgpt-recording.webm",
+  );
+
+  const response = await authenticatedFetch(
+    `${API_BASE_URL}/voice/transcribe`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+
+  const data = (await response.json()) as {
+    text: string;
+    message?: string;
+  };
+
+  return data.text;
+}
+
+
+export async function speakText(text: string): Promise<Blob> {
+  const response = await authenticatedFetch(
+    `${API_BASE_URL}/voice/speak`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    let errorMessage = "Unable to generate speech.";
+
+    try {
+      const errorData = await response.json();
+
+      if (errorData?.detail) {
+        errorMessage = errorData.detail;
+      }
+    } catch {
+      // Keep the default error message.
+    }
+
+    throw new Error(errorMessage);
+  }
+
+  return await response.blob();
+}

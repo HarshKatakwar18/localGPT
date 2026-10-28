@@ -12,7 +12,9 @@ from fastapi import Request
 from app.api.dependencies import (
     get_current_user,
     check_thread_ownership,
-)
+)   
+
+from app.api.voice import router as voice_router
 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -39,6 +41,8 @@ from app.database.users import (
     setup_users_table,
     setup_refresh_tokens_table,
 )
+
+from app.database.expenses import setup_expenses_table
 
 from app.database.rag import setup_rag_tables
 
@@ -222,6 +226,8 @@ async def lifespan(app: FastAPI):
     await setup_conversations_table(database_url)
     
     await setup_rag_tables(database_url)
+    
+    await setup_expenses_table(database_url)
 
     async with AsyncPostgresSaver.from_conn_string(
         database_url
@@ -275,6 +281,8 @@ app = FastAPI(
 app.include_router(auth_router)
 
 app.include_router(rag_router)
+
+app.include_router(voice_router)
 
 app.add_middleware(
     CORSMiddleware,
