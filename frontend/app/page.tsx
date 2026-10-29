@@ -6,6 +6,7 @@ import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import VoiceRecordingPanel from "@/components/VoiceRecordingPanel";
 import { transcribeAudio } from "@/lib/api";
 
+import type { User } from "@/types/auth";
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 
 import { useRouter } from "next/navigation";
@@ -15,6 +16,7 @@ import { ThemeId } from "@/lib/themes";
 import {
   AuthenticationError,
   deleteThread as deleteThreadApi,
+  getCurrentUser,
   getThread,
   getThreads,
   logoutUser,
@@ -172,6 +174,8 @@ function SpeakerIcon({ speaking = false }: { speaking?: boolean }) {
 export default function Home() {
   const router = useRouter();
 
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -248,6 +252,25 @@ const [isTranscribing, setIsTranscribing] = useState(false);
          * to obtain a new access token automatically.
          */
         const backendThreads = await getThreads();
+
+        try {
+          const user = await getCurrentUser();
+
+          if (cancelled) {
+            return;
+          }
+
+          setCurrentUser(user);
+        } catch (error) {
+          if (error instanceof AuthenticationError) {
+            router.replace("/login");
+            return;
+          }
+
+          // A profile-loading error should not prevent chat history
+          // from loading if the session itself is still valid.
+          console.error("Failed to load account details:", error);
+        }
 
         if (cancelled) {
           return;
@@ -1004,8 +1027,18 @@ const [isTranscribing, setIsTranscribing] = useState(false);
               New chat
             </button>
 
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-white">
-              H
+            <div
+              title={currentUser?.name ?? "Account"}
+              aria-label={`Logged in as ${currentUser?.name ?? "Account"}`}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-white"
+            >
+              {currentUser?.name
+                ?.trim()
+                .split(/\s+/)
+                .map((part) => part[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase() || "?"}
             </div>
           </div>
         </header>
@@ -1284,6 +1317,7 @@ const [isTranscribing, setIsTranscribing] = useState(false);
       <SettingsModal
         open={settingsOpen}
         theme={theme}
+        user={currentUser}
         onThemeChange={setTheme}
         onClose={() => setSettingsOpen(false)}
         onLogout={handleLogout}

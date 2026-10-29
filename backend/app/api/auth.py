@@ -1,11 +1,13 @@
 from uuid import UUID, uuid4
 from datetime import datetime, timezone, timedelta
+from app.api.dependencies import get_current_user
 
 from fastapi import (
     APIRouter,
     HTTPException,
     Request,
     Response,
+    Depends,
 )
 
 from psycopg import AsyncConnection
@@ -400,3 +402,16 @@ async def logout(
     return {
         "message": "Logged out successfully"
     }    
+    
+@router.get(
+    "/me",
+    response_model=UserResponse,
+)
+async def get_me(
+    current_user=Depends(get_current_user),
+):
+    return UserResponse(
+        id=str(current_user["id"]),
+        name=current_user["name"],
+        email=current_user["email"],
+    )

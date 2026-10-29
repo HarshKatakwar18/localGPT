@@ -2,10 +2,12 @@
 
 import { useEffect } from "react";
 import { THEMES, type ThemeId } from "@/lib/themes";
+import type { User } from "@/types/auth";
 
 type SettingsModalProps = {
   open: boolean;
   theme: ThemeId;
+  user: User | null;
   onThemeChange: (theme: ThemeId) => void;
   onClose: () => void;
   onLogout: () => void;
@@ -14,6 +16,7 @@ type SettingsModalProps = {
 export default function SettingsModal({
   open,
   theme,
+  user,
   onThemeChange,
   onClose,
   onLogout,
@@ -64,10 +67,7 @@ export default function SettingsModal({
         {/* Header */}
         <header className="flex items-start justify-between border-b border-[var(--border)] px-6 py-5">
           <div>
-            <h2
-              id="settings-title"
-              className="text-2xl font-semibold"
-            >
+            <h2 id="settings-title" className="text-2xl font-semibold">
               Settings
             </h2>
 
@@ -88,34 +88,51 @@ export default function SettingsModal({
 
         {/* Content */}
         <div className="overflow-y-auto px-6 py-6">
-
+          
           {/* Account */}
           <div className="mb-8">
             <div className="mb-4">
-              <h3 className="text-lg font-semibold">
-                Account
-              </h3>
+              <h3 className="text-lg font-semibold">Account</h3>
 
               <p className="mt-1 text-sm text-[var(--text-secondary)]">
                 Manage your LocalGPT account and authentication.
               </p>
             </div>
 
-            <div className="flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4">
-              <div>
-                <p className="font-medium">
-                  You are currently logged in
-                </p>
+            <div className="flex flex-col gap-4 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                {/* User initials */}
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-lg font-semibold text-white">
+                  {user?.name
+                    ?.trim()
+                    .split(/\s+/)
+                    .map((part) => part[0])
+                    .join("")
+                    .slice(0, 2)
+                    .toUpperCase() || "?"}
+                </div>
 
-                <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                  Your LocalGPT account is authenticated.
-                </p>
+                {/* User details */}
+                <div className="min-w-0">
+                  <p className="truncate font-medium">
+                    {user?.name || "Loading account..."}
+                  </p>
+
+                  <p className="mt-1 break-all text-sm text-[var(--text-secondary)]">
+                    {user?.email || "Account details unavailable"}
+                  </p>
+
+                  <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                    LocalGPT account
+                  </p>
+                </div>
               </div>
 
+              {/* Logout */}
               <button
                 type="button"
                 onClick={onLogout}
-                className="rounded-xl border border-red-500/40 px-4 py-2.5 font-medium text-red-400 transition hover:bg-red-500/10"
+                className="shrink-0 self-start rounded-xl border border-red-500/40 px-4 py-2.5 font-medium text-red-400 transition hover:bg-red-500/10 sm:self-auto"
               >
                 Log out
               </button>
@@ -125,9 +142,7 @@ export default function SettingsModal({
           {/* Appearance */}
           <div>
             <div className="mb-5">
-              <h3 className="text-lg font-semibold">
-                Appearance
-              </h3>
+              <h3 className="text-lg font-semibold">Appearance</h3>
 
               <p className="mt-1 text-sm text-[var(--text-secondary)]">
                 Choose a theme for the complete application.

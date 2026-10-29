@@ -301,6 +301,24 @@ export async function loginUser(
   return (await response.json()) as AuthResponse;
 }
 
+
+export async function getCurrentUser(): Promise<User> {
+  const response = await authenticatedFetch(
+    `${API_BASE_URL}/auth/me`,
+    {
+      method: "GET",
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+
+  return (await response.json()) as User;
+}
+
+
 export async function logoutUser(): Promise<void> {
   try {
     const response = await fetch(
